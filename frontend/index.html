@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Dashboard de SIMTELE-RISK para el estudio y simulación de módulos de riesgo.">
+    <title>SIMTELE-RISK | Dashboard analítico</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <a class="brand" href="#dashboard" aria-label="SIMTELE-RISK, ir al resumen">
+                <span class="brand-mark">SR</span>
+                <span class="brand-copy">
+                    <strong>SIMTELE</strong>
+                    <small>RISK ANALYTICS</small>
+                </span>
+            </a>
+
+            <nav class="nav" aria-label="Navegación principal">
+                <a class="nav-link nav-link-active" href="#dashboard">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm10 7h6V11h-6v9ZM4 20h6v-3H4v3Zm10-13h6V4h-6v3Z"/></svg>
+                    <span>Resumen</span>
+                </a>
+                <div class="nav-group">
+                    <button class="nav-link nav-toggle" id="modules-toggle" type="button" aria-expanded="true" aria-controls="modules-subnav">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4V4Zm10 0h6v6h-6V4ZM4 14h6v6H4v-6Zm10 0h6v6h-6v-6Z"/></svg>
+                        <span>Módulos de estudio</span>
+                        <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                    </button>
+                    <div class="nav-subnav" id="modules-subnav" aria-label="Módulos de estudio">
+                        <a class="nav-sublink" href="#modulo-2" data-module="1" data-caso="CE-001">
+                            <span class="nav-sublink-index">01</span>
+                            <span>Detención de emergencia</span>
+                        </a>
+                        <a class="nav-sublink" href="#modulo-2" data-module="2" data-caso="CE-002">
+                            <span class="nav-sublink-index">02</span>
+                            <span>Deterioro mecánico</span>
+                        </a>
+                        <a class="nav-sublink" href="#modulo-2" data-module="3" data-caso="CE-003">
+                            <span class="nav-sublink-index">03</span>
+                            <span>Oscilaciones por viento</span>
+                        </a>
+                        <a class="nav-sublink" href="#modulo-2" data-module="4" data-caso="CE-004">
+                            <span class="nav-sublink-index">04</span>
+                            <span>Reconstrucción de sensores</span>
+                        </a>
+                    </div>
+                </div>
+                <a class="nav-link" href="#simulaciones">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5V4Zm3 4h8M8 12h8M8 16h5"/></svg>
+                    <span>Simulaciones</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-card">
+                <span class="status-dot" id="sidebar-status-dot"></span>
+                <div>
+                    <strong id="sidebar-status-text">Conectando</strong>
+                    <p>API Flask · SQLite</p>
+                </div>
+            </div>
+
+            <div class="sidebar-foot">
+                <span>Entorno analítico</span>
+                <span>v1.0</span>
+            </div>
+        </aside>
+
+        <main class="main" id="dashboard">
+            <header class="topbar">
+                <div class="topbar-copy">
+                    <p class="eyebrow" id="page-eyebrow">Panel de control</p>
+                    <h1 id="page-title">Riesgo y simulación</h1>
+                    <p class="subtitle">Modela escenarios, resuelve sistemas lineales y conserva la trazabilidad de cada simulación.</p>
+                </div>
+                <div class="topbar-actions">
+                    <span class="status-pill status-pill-waiting" id="api-status">
+                        <span class="status-dot"></span>
+                        <span id="api-status-text">Comprobando API</span>
+                    </span>
+                    <button class="btn btn-ghost" id="refresh-all" type="button">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 5v6h-6"/></svg>
+                        <span>Actualizar</span>
+                    </button>
+                </div>
+            </header>
+
+            <section class="stats-grid" aria-label="Indicadores generales">
+                <article class="stat-card">
+                    <div class="stat-top">
+                        <span class="stat-label">Casos de estudio</span>
+                        <span class="stat-icon stat-icon-blue">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5V4Zm3 4h8M8 12h8M8 16h5"/></svg>
+                        </span>
+                    </div>
+                    <strong class="stat-value" id="stat-casos">—</strong>
+                    <span class="stat-meta">Cargados desde SQLite</span>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-top">
+                        <span class="stat-label">Escenarios</span>
+                        <span class="stat-icon stat-icon-teal">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18V9m5 9V5m5 13v-6m5 6V7"/></svg>
+                        </span>
+                    </div>
+                    <strong class="stat-value" id="stat-escenarios">—</strong>
+                    <span class="stat-meta">Disponibles para simular</span>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-top">
+                        <span class="stat-label">Simulaciones</span>
+                        <span class="stat-icon stat-icon-violet">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16H6V4Zm3 5h6M9 13h6M9 17h3"/></svg>
+                        </span>
+                    </div>
+                    <strong class="stat-value" id="stat-simulaciones">—</strong>
+                    <span class="stat-meta">Guardadas en la base</span>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-top">
+                        <span class="stat-label">Métodos lineales</span>
+                        <span class="stat-icon stat-icon-amber">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4V4Zm10 0h6v6h-6V4ZM4 14h6v6H4v-6Zm10 0h6v6h-6v-6Z"/></svg>
+                        </span>
+                    </div>
+                    <strong class="stat-value">5</strong>
+                    <span class="stat-meta">Directos e iterativos</span>
+                </article>
+            </section>
+
+            <section class="section" id="modulos">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Módulos obligatorios</p>
+                        <h2>Módulos del sistema</h2>
+                    </div>
+                    <span class="section-note">4 módulos</span>
+                </div>
+
+                <div class="modules-grid">
+                    <article class="module-card module-card-active" data-module="1" data-caso="CE-001" role="button" tabindex="0" aria-controls="modulo-2" aria-label="Abrir el solucionador de sistemas para detención de emergencia de cabinas">
+                        <div class="module-top">
+                            <span class="module-index">01</span>
+                            <span class="badge badge-primary">Activo</span>
+                        </div>
+                        <span class="module-icon module-icon-primary">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3Zm0 5v5m0 3v.01"/></svg>
+                        </span>
+                        <h3>Detención de emergencia de cabinas</h3>
+                        <p>Simula la activación de la parada de emergencia de cabinas y evalúa la respuesta del sistema ante fallos críticos.</p>
+                        <div class="module-metrics">
+                            <span>Parada segura</span>
+                            <span><strong>3</strong> escenarios</span>
+                        </div>
+                        <div class="module-footer">
+                            <span class="module-state module-state-active">Disponible</span>
+                            <span class="module-cta">
+                                Abrir solucionador
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg>
+                            </span>
+                        </div>
+                    </article>
+
+                    <article class="module-card module-card-active" data-module="2" data-caso="CE-002" role="button" tabindex="0" aria-controls="modulo-2" aria-label="Abrir el solucionador de sistemas para deterioro mecánico y mantenimiento">
+                        <div class="module-top">
+                            <span class="module-index">02</span>
+                            <span class="badge badge-primary">Activo</span>
+                        </div>
+                        <span class="module-icon module-icon-primary">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4V4Zm10 0h6v6h-6V4ZM4 14h6v6H4v-6Zm10 0h6v6h-6v-6Z"/></svg>
+                        </span>
+                        <h3>Deterioro mecánico y mantenimiento</h3>
+                        <p>Analiza el desgaste mecánico y resuelve el sistema lineal para priorizar las tareas de mantenimiento.</p>
+                        <div class="module-metrics">
+                            <span><strong>5</strong> métodos</span>
+                            <span><strong>3</strong> escenarios</span>
+                        </div>
+                        <div class="module-footer">
+                            <span class="module-state module-state-active">Disponible</span>
+                            <span class="module-cta">
+                                Abrir solucionador
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg>
+                            </span>
+                        </div>
+                    </article>
+
+                    <article class="module-card module-card-active" data-module="3" data-caso="CE-003" role="button" tabindex="0" aria-controls="modulo-2" aria-label="Abrir el solucionador de sistemas para oscilación por viento">
+                        <div class="module-top">
+                            <span class="module-index">03</span>
+                            <span class="badge badge-primary">Activo</span>
+                        </div>
+                        <span class="module-icon module-icon-primary">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h10a3 3 0 1 0-3-3M3 12h14a3 3 0 1 1-3 3M4 16h6"/></svg>
+                        </span>
+                        <h3>Oscilación por viento</h3>
+                        <p>Modela la oscilación de cabinas y estructuras por acción del viento y sus efectos sobre la operación.</p>
+                        <div class="module-metrics">
+                            <span>Dinámica estructural</span>
+                            <span><strong>3</strong> escenarios</span>
+                        </div>
+                        <div class="module-footer">
+                            <span class="module-state module-state-active">Disponible</span>
+                            <span class="module-cta">
+                                Abrir solucionador
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg>
+                            </span>
+                        </div>
+                    </article>
+
+                    <article class="module-card module-card-active" data-module="4" data-caso="CE-004" role="button" tabindex="0" aria-controls="modulo-2" aria-label="Abrir el solucionador de sistemas para reconstrucción de señales de sensores">
+                        <div class="module-top">
+                            <span class="module-index">04</span>
+                            <span class="badge badge-primary">Activo</span>
+                        </div>
+                        <span class="module-icon module-icon-primary">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h3l2-5 4 10 2-5h7"/></svg>
+                        </span>
+                        <h3>Reconstrucción de señales de sensores</h3>
+                        <p>Reconstruye señales de sensores incompletas o con ruido para recuperar lecturas confiables.</p>
+                        <div class="module-metrics">
+                            <span>Señales y filtros</span>
+                            <span><strong>3</strong> escenarios</span>
+                        </div>
+                        <div class="module-footer">
+                            <span class="module-state module-state-active">Disponible</span>
+                            <span class="module-cta">
+                                Abrir solucionador
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg>
+                            </span>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section class="section workspace" id="modulo-2" aria-labelledby="modulo-title">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow" id="modulo-eyebrow">Módulos de estudio</p>
+                        <h2 id="modulo-title">Sistemas lineales</h2>
+                        <p class="section-description">Selecciona un escenario, configura el método y analiza cada iteración con su error y residual.</p>
+                    </div>
+                    <span class="section-note section-note-mono">A · x = b</span>
+                </div>
+
+                <div class="workspace-grid">
+                    <div class="panel control-panel">
+                        <div class="panel-head">
+                            <div>
+                                <h3>Configuración</h3>
+                                <p>Define el contexto de ejecución</p>
+                            </div>
+                            <span class="panel-chip">Paso 1</span>
+                        </div>
+
+                        <div class="field">
+                            <label for="scenario-select">Escenario de simulación</label>
+                            <div class="select-wrap">
+                                <select id="scenario-select">
+                                    <option value="">Cargando escenarios…</option>
+                                </select>
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+                            </div>
+                            <p class="field-hint">Los escenarios se agrupan por caso de estudio.</p>
+                        </div>
+
+                        <div class="scenario-detail" id="scenario-detail" hidden>
+                            <div>
+                                <span class="detail-label">Caso</span>
+                                <strong id="scenario-case">—</strong>
+                            </div>
+                            <div>
+                                <span class="detail-label">Tipo</span>
+                                <strong id="scenario-type">—</strong>
+                            </div>
+                            <div>
+                                <span class="detail-label">Probabilidad</span>
+                                <strong id="scenario-probability">—</strong>
+                            </div>
+                            <div>
+                                <span class="detail-label">Severidad</span>
+                                <strong id="scenario-severity">—</strong>
+                            </div>
+                        </div>
+
+                        <fieldset class="method-fieldset">
+                            <legend>Método de resolución</legend>
+                            <div class="method-grid" id="method-grid">
+                                <button class="method-option method-option-active" type="button" data-method="exacta">
+                                    <span class="method-number">01</span>
+                                    <span>
+                                        <strong>Solución exacta</strong>
+                                        <small>Gauss con pivoteo</small>
+                                    </span>
+                                </button>
+                                <button class="method-option" type="button" data-method="lu">
+                                    <span class="method-number">02</span>
+                                    <span>
+                                        <strong>Factorización LU</strong>
+                                        <small>Pivoteo parcial</small>
+                                    </span>
+                                </button>
+                                <button class="method-option" type="button" data-method="jacobi">
+                                    <span class="method-number">03</span>
+                                    <span>
+                                        <strong>Jacobi</strong>
+                                        <small>Iterativo</small>
+                                    </span>
+                                </button>
+                                <button class="method-option" type="button" data-method="gauss-seidel">
+                                    <span class="method-number">04</span>
+                                    <span>
+                                        <strong>Gauss-Seidel</strong>
+                                        <small>Iterativo</small>
+                                    </span>
+                                </button>
+                                <button class="method-option" type="button" data-method="gradiente-conjugado">
+                                    <span class="method-number">05</span>
+                                    <span>
+                                        <strong>Gradiente conjugado</strong>
+                                        <small>Matrices SPD</small>
+                                    </span>
+                                </button>
+                            </div>
+                        </fieldset>
+
+                        <div class="iterative-controls" id="iterative-controls" hidden>
+                            <div class="field">
+                                <label for="tolerance">Tolerancia</label>
+                                <input id="tolerance" type="number" value="1e-10" step="1e-12" min="0">
+                            </div>
+                            <div class="field">
+                                <label for="max-iterations">Máximo de iteraciones</label>
+                                <input id="max-iterations" type="number" value="1000" min="1" step="1">
+                            </div>
+                        </div>
+
+                        <div class="system-preview">
+                            <div class="panel-subhead">
+                                <span>Sistema de referencia</span>
+                                <span id="system-shape">4 × 4</span>
+                            </div>
+                            <div class="matrix-view" id="matrix-view" aria-label="Matriz A y vector b del sistema de referencia"></div>
+                        </div>
+
+                        <div class="action-row">
+                            <button class="btn btn-primary" id="run-method" type="button">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7V5Z"/></svg>
+                                <span>Ejecutar método</span>
+                            </button>
+                            <button class="btn btn-secondary" id="save-simulation" type="button" disabled>
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5V4Zm3 0v6h8V4M8 20v-6h8v6"/></svg>
+                                <span>Guardar simulación</span>
+                            </button>
+                        </div>
+                        <p class="field-hint action-hint" id="run-hint">Ejecuta un método para habilitar el guardado.</p>
+                    </div>
+
+                    <div class="panel results-panel">
+                        <div class="panel-head">
+                            <div>
+                                <h3>Resultados</h3>
+                                <p id="result-subtitle">Aún no hay una ejecución</p>
+                            </div>
+                            <span class="result-badge result-badge-idle" id="result-status">Sin ejecutar</span>
+                        </div>
+
+                        <div class="empty-state" id="empty-result">
+                            <span class="empty-icon">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5m0 14h16M8 15l3-4 3 2 4-6"/></svg>
+                            </span>
+                            <h4>Listo para calcular</h4>
+                            <p>Selecciona un escenario y un método. Los resultados, iteraciones y errores aparecerán aquí.</p>
+                        </div>
+
+                        <div class="result-content" id="result-content" hidden>
+                            <div class="solution-grid" id="solution-grid"></div>
+
+                            <div class="result-meta" id="result-meta"></div>
+
+                            <div class="table-block">
+                                <div class="table-head">
+                                    <div>
+                                        <h4>Iteraciones paso a paso</h4>
+                                        <p>Error absoluto y relativo calculados entre aproximaciones sucesivas.</p>
+                                    </div>
+                                    <span id="iteration-count">0 iteraciones</span>
+                                </div>
+                                <div class="table-scroll">
+                                    <table class="data-table iterations-table" id="iterations-table">
+                                        <thead id="iterations-head"></thead>
+                                        <tbody id="iterations-body"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div class="table-block" id="lu-factors" hidden>
+                                <div class="table-head">
+                                    <div>
+                                        <h4>Factorización LU</h4>
+                                        <p>Matrices L, U y P obtenidas con pivoteo parcial.</p>
+                                    </div>
+                                </div>
+                                <div class="lu-grid" id="lu-grid"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section" id="simulaciones" aria-labelledby="simulaciones-title">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Trazabilidad</p>
+                        <h2 id="simulaciones-title">Simulaciones guardadas</h2>
+                        <p class="section-description">Consulta las últimas ejecuciones persistidas en SQLite.</p>
+                    </div>
+                    <button class="btn btn-ghost" id="refresh-simulations" type="button">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 5v6h-6"/></svg>
+                        <span>Recargar</span>
+                    </button>
+                </div>
+
+                <div class="panel saved-panel">
+                    <div class="table-scroll">
+                        <table class="data-table simulations-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Código</th>
+                                    <th>Escenario</th>
+                                    <th>Método</th>
+                                    <th>Estado</th>
+                                    <th>Iteraciones</th>
+                                    <th>Fecha</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="simulations-body"></tbody>
+                        </table>
+                    </div>
+                    <div class="empty-state empty-state-small" id="simulations-empty">
+                        <span class="empty-icon">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16H6V4Zm3 5h6M9 13h6M9 17h3"/></svg>
+                        </span>
+                        <h4>Sin simulaciones</h4>
+                        <p>Las ejecuciones que guardes aparecerán en esta tabla.</p>
+                    </div>
+                </div>
+            </section>
+
+            <footer class="footer">
+                <span>SIMTELE-RISK · Plataforma de análisis de riesgo</span>
+                <span>Flask + SQLite</span>
+            </footer>
+        </main>
+    </div>
+
+    <div class="modal-backdrop" id="modal" hidden>
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+            <div class="modal-head">
+                <div>
+                    <p class="eyebrow">Detalle</p>
+                    <h3 id="modal-title">Simulación</h3>
+                </div>
+                <button class="icon-btn" id="modal-close" type="button" aria-label="Cerrar detalle">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
