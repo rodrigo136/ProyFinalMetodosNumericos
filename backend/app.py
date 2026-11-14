@@ -7,7 +7,7 @@ import os
 import sqlite3
 from typing import Any, Callable, Dict, List
 
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, jsonify, request, send_from_directory
 
 if __package__:
     from .database import (
@@ -50,7 +50,7 @@ else:
         solucion_exacta,
     )
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="../frontend", static_url_path="")
 app.config["JSON_SORT_KEYS"] = False
 inicializar_base_datos()
 
@@ -129,6 +129,11 @@ def _resolver_metodo(
     except Exception:
         app.logger.exception("Error al ejecutar un método lineal")
         return _responder({"error": "Error interno al ejecutar el método"}, 500)
+
+
+@app.route("/")
+def servir_index():
+    return send_from_directory(app.static_folder, "index.html")
 
 
 @app.get("/api/salud")
