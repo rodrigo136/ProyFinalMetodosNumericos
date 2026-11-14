@@ -15,12 +15,11 @@ const API_BASE = (() => {
     if (override) {
         return override.replace(/\/+$/, "");
     }
-    if (window.location.port === "5000") {
+    // Si estamos en producción (Render u otro servidor), usamos rutas relativas
+    if (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
         return "";
     }
-    const protocol = window.location.protocol === "https:" ? "https:" : "http:";
-    const host = window.location.hostname || "127.0.0.1";
-    return `${protocol}//${host}:5000`;
+    return "http://127.0.0.1:5000";
 })();
 
 const METODOS = {
