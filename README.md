@@ -86,6 +86,35 @@ Se implementan cinco métodos:
 
 Los métodos iterativos reportan convergencia, número de iteraciones, errores y residual. La convergencia depende de las propiedades del sistema y de los parámetros elegidos; no está garantizada para cualquier matriz.
 
+### Métodos numéricos de la Semana 2
+
+Se agregan los módulos `backend/raices.py`, `backend/integracion.py`,
+`backend/edo.py` y `backend/interpolacion.py`. Los métodos reportan sus
+iteraciones o tablas, errores disponibles, referencias analíticas cuando
+corresponden y estados de convergencia/estabilidad. Las referencias iguales a
+cero dejan el error relativo como no disponible, y se rechazan entradas o
+resultados no finitos.
+
+Los cuatro módulos incluyen escenarios reproducibles `NORMAL`, `ESTRES` y
+`MAL_CONDICIONADO`. El escenario de estrés representa exigencia física u
+operativa; el mal condicionado representa sensibilidad matemática. La
+configuración de oscilaciones incluye además una excitación próxima a la
+frecuencia natural. Son modelos académicos, no ajustes ni recomendaciones para
+la operación real de Mi Teleférico.
+
+- **Módulo 1:** frenado con Heun/RK4, cuadraturas de la velocidad y raíces del
+  instante de parada.
+- **Módulo 2:** raíces del deterioro respecto al umbral. El calibrador de
+  sistemas lineales ya existente permanece disponible.
+- **Módulo 3:** sistema masa-resorte-amortiguador forzado, y cuadraturas de
+  \(x(t)^2\).
+- **Módulo 4:** Lagrange, Newton por diferencias divididas y splines cúbicos
+  naturales evaluados en lecturas ocultas.
+
+El panel nuevo ofrece dos gráficos Canvas sin dependencias externas, tablas
+detalladas y parámetros del escenario. Las ejecuciones numéricas se guardan en
+la misma tabla SQLite de simulaciones y aparecen en el historial existente.
+
 ## Instalación y ejecución
 
 ### Requisitos
@@ -161,6 +190,14 @@ python -m http.server 8000 --directory frontend
 
 Abre `http://127.0.0.1:8000` en el navegador. El frontend usa por defecto la API Flask en el puerto `5000` del mismo host. Ambos servidores deben permanecer activos mientras se utiliza la aplicación.
 
+### 6. Ejecutar pruebas numéricas
+
+Desde la raíz del proyecto:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
 Para detener cada servidor, pulsa `Ctrl+C` en su terminal.
 
 ### Rutas principales de la API
@@ -169,6 +206,12 @@ Para detener cada servidor, pulsa `Ctrl+C` en su terminal.
 |---|---|---|
 | `GET` | `/api/salud` | Estado del backend y sistema de referencia. |
 | `GET` | `/api/metodos` | Métodos numéricos disponibles. |
+| `GET` | `/api/escenarios-modulo` | Parámetros de los 4 módulos y escenarios `NORMAL`, `ESTRES` y `MAL_CONDICIONADO`. |
+| `POST` | `/api/metodos/raices` | Ejecutar bisección, Newton-Raphson o secante. |
+| `POST` | `/api/metodos/integracion` | Ejecutar trapecio, Simpson 1/3 o Romberg. |
+| `POST` | `/api/metodos/edo` | Ejecutar Heun (RK2) o Runge-Kutta clásico (RK4). |
+| `POST` | `/api/metodos/interpolacion` | Ejecutar Lagrange, Newton o spline natural. |
+| `POST` | `/api/modulos/<modulo>/ejecutar` | Ruta unificada de ejecución numérica para el módulo indicado (1–4). |
 | `POST` | `/api/metodos/exacta` | Resolver el sistema por el método exacto. |
 | `POST` | `/api/metodos/lu` | Resolver por factorización LU. |
 | `POST` | `/api/metodos/jacobi` | Resolver por Jacobi. |
@@ -180,6 +223,8 @@ Para detener cada servidor, pulsa `Ctrl+C` en su terminal.
 
 Las solicitudes `POST` de métodos aceptan un objeto JSON. Se puede omitir `A` y `b` para usar el sistema de referencia. Los métodos iterativos aceptan además `x0`, `tolerancia` y `max_iteraciones`.
 
+Las rutas de métodos nuevos reciben `{"modulo": 1, "escenario": "NORMAL", "metodo": "rk4"}`. Los métodos disponibles dependen del módulo; la respuesta contiene la configuración aplicada, el resultado y la tabla detallada correspondiente.
+
 ## Estructura de directorios
 
 ```text
@@ -188,6 +233,11 @@ SIMTELE-RISK/
 │   ├── app.py                 # API Flask y rutas HTTP
 │   ├── database.py            # Persistencia, inicialización y datos semilla
 │   ├── errores.py             # Funciones de análisis de errores
+│   ├── raices.py              # Bisección, Newton-Raphson y secante
+│   ├── integracion.py         # Trapecio, Simpson 1/3 y Romberg
+│   ├── edo.py                 # Heun y Runge-Kutta clásico de orden 4
+│   ├── interpolacion.py       # Lagrange, Newton y spline natural
+│   ├── escenarios_modulo.py   # Escenarios semilla y ejecución por módulo
 │   ├── sistemas_lineales.py   # Métodos numéricos para Ax = b
 │   └── simtele_risk.db        # Base SQLite predeterminada (se crea al iniciar)
 ├── database/
@@ -197,5 +247,7 @@ SIMTELE-RISK/
 │   ├── app.js                 # Interacción y consumo de la API
 │   ├── index.html             # Estructura de la interfaz
 │   └── styles.css             # Estilos y diseño adaptable
+├── tests/
+│   └── test_semana2.py        # Pruebas focalizadas de los métodos nuevos
 └── requirements.txt           # Dependencias de Python
 ```

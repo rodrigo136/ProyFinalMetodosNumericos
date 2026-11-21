@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 from contextlib import closing
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -14,6 +15,15 @@ SCHEMA_PATH = BASE_DIR.parent / "database" / "schema.sql"
 
 _DB_PATH_ENV = os.environ.get("SIMTELE_RISK_DB")
 DB_PATH = Path(_DB_PATH_ENV) if _DB_PATH_ENV else BASE_DIR / "simtele_risk.db"
+_INICIALIZACION_LOCK = threading.Lock()
+_TABLAS_REQUERIDAS = {
+    "caso_estudio",
+    "escenario",
+    "simulacion",
+    "ejecucion_metodo",
+    "iteracion_resultado",
+    "resultado_resumen",
+}
 
 MATRIZ_A_MODULO_2 = [
     [10, 2, 1, 0],
@@ -108,8 +118,7 @@ ESCENARIOS_CASO = (
 )
 
 
-def get_connection() -> sqlite3.Connection:
-    """Crea una conexión SQLite con claves foráneas habilitadas."""
+def _abrir_conexion() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(str(DB_PATH), timeout=10)
     connection.row_factory = sqlite3.Row
@@ -117,12 +126,42 @@ def get_connection() -> sqlite3.Connection:
     return connection
 
 
-def _tabla_existe(connection: sqlite3.Connection, nombre: str) -> bool:
-    fila = connection.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-        (nombre,),
-    ).fetchone()
-    return fila is not None
+def _asegurar_esquema(connection: sqlite3.Connection) -> bool:
+    tablas = {
+        fila["name"]
+        for fila in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name NOT LIKE 'sqlite_%'"
+        )
+    }
+
+    if not tablas:
+        if not SCHEMA_PATH.exists():
+            raise FileNotFoundError(f"No se encontró el esquema: {SCHEMA_PATH}")
+        connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        return True
+
+    faltantes = _TABLAS_REQUERIDAS - tablas
+    if faltantes:
+        nombres = ", ".join(sorted(faltantes))
+        raise sqlite3.DatabaseError(
+            f"El esquema SQLite está incompleto; faltan tablas: {nombres}"
+        )
+    return False
+
+
+def get_connection() -> sqlite3.Connection:
+    """Crea una conexión y recupera una base vacía con el esquema inicial."""
+    connection = _abrir_conexion()
+    try:
+        with _INICIALIZACION_LOCK:
+            if _asegurar_esquema(connection):
+                _insertar_datos_iniciales(connection)
+                connection.commit()
+    except Exception:
+        connection.close()
+        raise
+    return connection
 
 
 def _serializar_json(valor: Any) -> str:
@@ -142,7 +181,7 @@ def _deserializar_json(valor: Any, por_defecto: Any = None) -> Any:
         return por_defecto
     try:
         return json.loads(valor)
-    except (TypeError, json.JSONDecodeError):
+    except (TypeError, ValueError):
         return por_defecto
 
 
@@ -284,14 +323,8 @@ def _insertar_datos_iniciales(connection: sqlite3.Connection) -> Dict[str, int]:
 
 def inicializar_base_datos(sembrar: bool = True) -> Dict[str, int]:
     """Crea el esquema si no existe y carga los casos de estudio iniciales."""
-    if not SCHEMA_PATH.exists():
-        raise FileNotFoundError(f"No se encontró el esquema: {SCHEMA_PATH}")
-
-    with closing(get_connection()) as connection:
-        esquema_creado = 0
-        if not _tabla_existe(connection, "caso_estudio"):
-            connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
-            esquema_creado = 1
+    with closing(_abrir_conexion()) as connection:
+        esquema_creado = int(_asegurar_esquema(connection))
 
         resultado = {"casos_insertados": 0, "escenarios_insertados": 0}
         if sembrar:

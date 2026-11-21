@@ -75,10 +75,25 @@ const MODULOS = {
     4: { nombre: "Reconstrucción de sensores", caso: "CE-004" }
 };
 
+const METODOS_NUMERICOS = {
+    rk2: { nombre: "Runge-Kutta 2 (Heun)", categoria: "edo" },
+    rk4: { nombre: "Runge-Kutta 4 clásico", categoria: "edo" },
+    trapecio: { nombre: "Trapecio compuesto", categoria: "integracion" },
+    simpson: { nombre: "Simpson 1/3 compuesto", categoria: "integracion" },
+    romberg: { nombre: "Romberg", categoria: "integracion" },
+    biseccion: { nombre: "Bisección", categoria: "raices" },
+    newton: { nombre: "Newton-Raphson", categoria: "raices" },
+    secante: { nombre: "Secante", categoria: "raices" },
+    lagrange: { nombre: "Lagrange", categoria: "interpolacion" },
+    newton_interpolacion: { nombre: "Newton por diferencias divididas", categoria: "interpolacion" },
+    spline: { nombre: "Spline cúbico natural", categoria: "interpolacion" }
+};
+
 const state = {
     casos: [],
     escenarios: [],
     simulaciones: [],
+    escenariosModulo: null,
     referencia: { A: REFERENCIA_DEFAULT.A, b: REFERENCIA_DEFAULT.b },
     metodoId: "exacta",
     escenarioSeleccionado: null,
@@ -94,6 +109,9 @@ const state = {
 };
 
 let toastTimer = null;
+let navScrollFrame = null;
+let navScrollTarget = null;
+let navScrollTimer = null;
 
 function $(id) {
     return document.getElementById(id);
@@ -333,6 +351,17 @@ function renderizarEscenarios() {
     actualizarAcciones();
 }
 
+function seleccionarEscenarioPersistente(codigo) {
+    const escenario = escenariosFiltrados().find((item) => item.codigo === codigo);
+    if (!escenario) {
+        return;
+    }
+    state.escenarioSeleccionado = Number(escenario.id);
+    $("scenario-select").value = String(escenario.id);
+    actualizarDetalleEscenario();
+    actualizarAcciones();
+}
+
 function actualizarDetalleEscenario() {
     const detalle = $("scenario-detail");
     const escenario = obtenerEscenarioSeleccionado();
@@ -391,6 +420,355 @@ function renderizarMatrizReferencia() {
     contenedor.replaceChildren(shell);
 }
 
+function actualizarPresetNumerico() {
+    const selectorMetodo = $("numerical-method");
+    const modulo = Number($("numerical-module").value);
+    const codigoEscenario = $("numerical-scenario").value;
+    const moduloDatos = state.escenariosModulo && state.escenariosModulo.modulos
+        ? state.escenariosModulo.modulos[String(modulo)]
+        : null;
+    const escenario = moduloDatos && moduloDatos.escenarios
+        ? moduloDatos.escenarios[codigoEscenario]
+        : null;
+
+    selectorMetodo.replaceChildren();
+    if (!moduloDatos || !escenario) {
+        $("preset-description").textContent = "No se pudieron cargar los parámetros preconfigurados.";
+        $("preset-parameters").textContent = "Verifica la conexión con la API.";
+        $("run-numerical").disabled = true;
+        return;
+    }
+
+    for (const id of moduloDatos.metodos) {
+        const opcion = document.createElement("option");
+        opcion.value = id;
+        opcion.textContent = METODOS_NUMERICOS[id].nombre;
+        selectorMetodo.appendChild(opcion);
+    }
+    selectorMetodo.value = moduloDatos.metodos[0];
+    $("preset-description").textContent = escenario.descripcion;
+    $("preset-parameters").textContent = JSON.stringify(escenario.parametros, null, 2);
+    $("run-numerical").disabled = false;
+}
+
+function formatearValorTabla(valor) {
+    if (valor === null || valor === undefined) {
+        return "—";
+    }
+    if (Array.isArray(valor)) {
+        return `[${valor.map((item) => formatearDecimal(item, 5)).join(", ")}]`;
+    }
+    if (typeof valor === "object") {
+        return JSON.stringify(valor);
+    }
+    return typeof valor === "number" ? formatearDecimal(valor, 7) : String(valor);
+}
+
+function dibujarGrafico(canvasId, series) {
+    const canvas = $(canvasId);
+    const contexto = canvas.getContext("2d");
+    const ancho = Math.max(280, canvas.clientWidth);
+    const alto = Math.max(180, canvas.clientHeight);
+    const escala = window.devicePixelRatio || 1;
+    canvas.width = Math.round(ancho * escala);
+    canvas.height = Math.round(alto * escala);
+    contexto.setTransform(escala, 0, 0, escala, 0, 0);
+    contexto.clearRect(0, 0, ancho, alto);
+
+    const validas = series.map((serie) => ({
+        ...serie,
+        puntos: (serie.puntos || []).filter((punto) =>
+            punto.x !== null && punto.x !== undefined
+            && punto.y !== null && punto.y !== undefined
+            && Number.isFinite(Number(punto.x)) && Number.isFinite(Number(punto.y))
+        )
+    })).filter((serie) => serie.puntos.length > 0);
+    if (!validas.length) {
+        contexto.fillStyle = "#64748b";
+        contexto.font = "12px sans-serif";
+        contexto.fillText("No hay datos suficientes para graficar.", 12, 24);
+        return;
+    }
+
+    const todos = validas.flatMap((serie) => serie.puntos);
+    let minX = Math.min(...todos.map((punto) => Number(punto.x)));
+    let maxX = Math.max(...todos.map((punto) => Number(punto.x)));
+    let minY = Math.min(...todos.map((punto) => Number(punto.y)));
+    let maxY = Math.max(...todos.map((punto) => Number(punto.y)));
+    if (minX === maxX) { minX -= 1; maxX += 1; }
+    if (minY === maxY) { minY -= 1; maxY += 1; }
+    const margen = { left: 42, right: 12, top: 24, bottom: 28 };
+    const plotW = ancho - margen.left - margen.right;
+    const plotH = alto - margen.top - margen.bottom;
+    const px = (x) => margen.left + (Number(x) - minX) / (maxX - minX) * plotW;
+    const py = (y) => margen.top + (maxY - Number(y)) / (maxY - minY) * plotH;
+
+    contexto.strokeStyle = "#e2e8f0";
+    contexto.lineWidth = 1;
+    for (let i = 0; i <= 4; i += 1) {
+        const y = margen.top + plotH * i / 4;
+        contexto.beginPath();
+        contexto.moveTo(margen.left, y);
+        contexto.lineTo(ancho - margen.right, y);
+        contexto.stroke();
+    }
+    contexto.strokeStyle = "#94a3b8";
+    contexto.beginPath();
+    contexto.moveTo(margen.left, margen.top);
+    contexto.lineTo(margen.left, alto - margen.bottom);
+    contexto.lineTo(ancho - margen.right, alto - margen.bottom);
+    contexto.stroke();
+
+    const colores = ["#2563eb", "#0f766e", "#d97706", "#7c3aed"];
+    validas.forEach((serie, indice) => {
+        contexto.strokeStyle = colores[indice % colores.length];
+        contexto.lineWidth = 2;
+        contexto.beginPath();
+        serie.puntos.forEach((punto, puntoIndice) => {
+            const x = px(punto.x);
+            const y = py(punto.y);
+            if (puntoIndice === 0) contexto.moveTo(x, y);
+            else contexto.lineTo(x, y);
+        });
+        contexto.stroke();
+        if (serie.puntos.length <= 20) {
+            contexto.fillStyle = colores[indice % colores.length];
+            serie.puntos.forEach((punto) => {
+                contexto.beginPath();
+                contexto.arc(px(punto.x), py(punto.y), 2.5, 0, Math.PI * 2);
+                contexto.fill();
+            });
+        }
+    });
+
+    contexto.font = "10px sans-serif";
+    contexto.textBaseline = "top";
+    let leyendaX = margen.left;
+    validas.forEach((serie, indice) => {
+        contexto.fillStyle = colores[indice % colores.length];
+        contexto.fillRect(leyendaX, 7, 9, 9);
+        contexto.fillStyle = "#475569";
+        const texto = serie.nombre || `Serie ${indice + 1}`;
+        contexto.fillText(texto, leyendaX + 13, 6);
+        leyendaX += contexto.measureText(texto).width + 28;
+    });
+}
+
+function construirSeriesGrafico(resultado) {
+    let solucion = [];
+    if (Array.isArray(resultado.curva)) {
+        solucion.push({
+            nombre: "Aproximación",
+            puntos: resultado.curva.map((punto) => ({ x: punto.x, y: punto.y }))
+        });
+        if (resultado.curva.some((punto) => punto.referencia !== undefined)) {
+            solucion.push({
+                nombre: "Referencia",
+                puntos: resultado.curva.map((punto) => ({ x: punto.x, y: punto.referencia }))
+            });
+        }
+    } else if (Array.isArray(resultado.tabla_temporal)) {
+        solucion = [{
+            nombre: "Estado",
+            puntos: resultado.tabla_temporal.map((fila) => ({
+                x: fila.t,
+                y: Array.isArray(fila.aproximacion) ? fila.aproximacion[0] : fila.aproximacion
+            }))
+        }];
+        if (resultado.tabla_temporal.some((fila) => Array.isArray(fila.aproximacion) && fila.aproximacion.length > 1)) {
+            solucion.push({
+                nombre: "Velocidad",
+                puntos: resultado.tabla_temporal.map((fila) => ({ x: fila.t, y: fila.aproximacion[1] }))
+            });
+        }
+        if (resultado.tabla_temporal.some((fila) => Array.isArray(fila.referencia) && fila.referencia.length)) {
+            solucion.push({
+                nombre: "Referencia",
+                puntos: resultado.tabla_temporal.map((fila) => ({
+                    x: fila.t,
+                    y: Array.isArray(fila.referencia) ? fila.referencia[0] : fila.referencia
+                }))
+            });
+        }
+    }
+    const filasError = resultado.iteraciones
+        || resultado.tabla_refinamiento
+        || resultado.tabla_temporal
+        || resultado.evaluaciones
+        || [];
+    const puntosError = filasError.map((fila, indice) => ({
+        x: fila.iteracion ?? fila.subintervalos ?? fila.t ?? fila.x ?? indice + 1,
+        y: fila.error_absoluto ?? fila.residual ?? null
+    }));
+    const diferencias = [];
+    for (let i = 1; i < filasError.length; i += 1) {
+        const anterior = filasError[i - 1].aproximacion;
+        const actual = filasError[i].aproximacion;
+        if (typeof anterior === "number" && typeof actual === "number") {
+            diferencias.push({
+                x: filasError[i].subintervalos ?? filasError[i].t ?? i + 1,
+                y: Math.abs(actual - anterior)
+            });
+        } else if (Array.isArray(anterior) && Array.isArray(actual) && anterior.length === actual.length) {
+            diferencias.push({
+                x: filasError[i].t ?? i + 1,
+                y: Math.sqrt(actual.reduce((suma, valor, indice) => suma + (valor - anterior[indice]) ** 2, 0))
+            });
+        }
+    }
+    const errores = [{ nombre: "Error / residual", puntos: puntosError }];
+    if (diferencias.length) errores.push({ nombre: "Cambio entre pasos", puntos: diferencias });
+    return { solucion, errores };
+}
+
+function datosTablaNumerica(resultado) {
+    if (Array.isArray(resultado.iteraciones)) {
+        return {
+            titulo: "Iteraciones de la raíz",
+            filas: resultado.iteraciones,
+            columnas: [
+                ["iteracion", "Iteración"], ["aproximacion", "Aproximación"],
+                ["error_absoluto", "Error abs."], ["error_relativo", "Error rel."],
+                ["error_porcentual", "Error %"], ["residual", "Residual"]
+            ]
+        };
+    }
+    if (Array.isArray(resultado.tabla_refinamiento)) {
+        return {
+            titulo: "Tabla de refinamiento",
+            filas: resultado.tabla_refinamiento,
+            columnas: [
+                ["subintervalos", "Subintervalos"], ["paso", "Paso"], ["nivel", "Nivel"],
+                ["aproximacion", "Aproximación"], ["error_absoluto", "Error abs."],
+                ["error_relativo", "Error rel."], ["error_porcentual", "Error %"]
+            ]
+        };
+    }
+    if (Array.isArray(resultado.tabla_temporal)) {
+        return {
+            titulo: "Tabla temporal",
+            filas: resultado.tabla_temporal,
+            columnas: [
+                ["t", "t"], ["aproximacion", "Aproximación"], ["referencia", "Referencia"],
+                ["error_absoluto", "Error abs."], ["error_relativo", "Error rel."],
+                ["error_porcentual", "Error %"]
+            ]
+        };
+    }
+    return {
+        titulo: "Evaluaciones de la señal",
+        filas: resultado.evaluaciones || [],
+        columnas: [
+            ["x", "Punto"], ["aproximacion", "Aproximación"], ["referencia", "Referencia"],
+            ["error_absoluto", "Error abs."], ["error_relativo", "Error rel."],
+            ["error_porcentual", "Error %"]
+        ]
+    };
+}
+
+function renderizarResultadoNumerico(resultado, metodo) {
+    const resumen = $("numerical-summary");
+    const valorPrincipal = resultado.raiz_aproximada
+        ?? resultado.integral_aproximada
+        ?? resultado.valor_final;
+    const referencia = resultado.valor_referencia_analitica
+        ?? resultado.referencia_analitica
+        ?? resultado.valor_referencia;
+    const elementos = [
+        ["Método", metodo.nombre],
+        ["Valor final", formatearValorTabla(valorPrincipal)],
+        ["Referencia", formatearValorTabla(referencia)],
+        ["Error absoluto", formatearError(resultado.error_absoluto_final)],
+        ["Error relativo", formatearError(resultado.error_relativo_final)],
+        ["Error %", formatearPorcentaje(resultado.error_porcentual_final)],
+        ["Residual", formatearError(resultado.residual_final)],
+        ["Convergencia / estabilidad", resultado.convergio ? "Sí" : "No"]
+    ];
+    resumen.replaceChildren();
+    for (const [etiqueta, valor] of elementos) {
+        if (valor === "—" && etiqueta !== "Valor final" && etiqueta !== "Referencia") continue;
+        const chip = document.createElement("div");
+        chip.className = "meta-chip";
+        const nombre = document.createElement("span");
+        nombre.textContent = etiqueta;
+        const contenido = document.createElement("strong");
+        contenido.textContent = valor;
+        chip.append(nombre, contenido);
+        resumen.appendChild(chip);
+    }
+    $("numerical-results").hidden = false;
+    const tabla = datosTablaNumerica(resultado);
+    $("numerical-table-title").textContent = tabla.titulo;
+    $("numerical-table-caption").textContent = resultado.mensaje || "Aproximaciones y métricas de error.";
+    $("numerical-row-count").textContent = `${tabla.filas.length} filas`;
+    const encabezado = document.createElement("tr");
+    tabla.columnas.forEach(([, titulo]) => {
+        const th = document.createElement("th");
+        th.textContent = titulo;
+        encabezado.appendChild(th);
+    });
+    $("numerical-table-head").replaceChildren(encabezado);
+    const cuerpo = document.createDocumentFragment();
+    for (const fila of tabla.filas) {
+        const tr = document.createElement("tr");
+        tabla.columnas.forEach(([clave]) => {
+            const td = document.createElement("td");
+            td.className = clave.includes("error") || clave === "aproximacion" || clave === "residual" ? "numeric" : "";
+            const valor = fila[clave];
+            td.textContent = clave === "error_porcentual" && valor !== null && valor !== undefined
+                ? formatearPorcentaje(valor)
+                : (clave === "error_absoluto" || clave === "error_relativo" || clave === "residual"
+                    ? formatearError(valor)
+                    : formatearValorTabla(valor));
+            tr.appendChild(td);
+        });
+        cuerpo.appendChild(tr);
+    }
+    $("numerical-table-body").replaceChildren(cuerpo);
+    const series = construirSeriesGrafico(resultado);
+    dibujarGrafico("solution-chart", series.solucion);
+    dibujarGrafico("error-chart", series.errores);
+}
+
+async function ejecutarMetodoNumerico() {
+    const modulo = Number($("numerical-module").value);
+    const escenario = $("numerical-scenario").value;
+    seleccionarEscenarioPersistente(escenario);
+    const idMetodo = $("numerical-method").value;
+    const metodo = METODOS_NUMERICOS[idMetodo];
+    if (!metodo) {
+        mostrarToast("Selecciona un método numérico válido.", "error");
+        return;
+    }
+
+    const boton = $("run-numerical");
+    boton.disabled = true;
+    $("numerical-hint").textContent = `Ejecutando ${metodo.nombre}…`;
+    try {
+        const resultado = await apiRequest(`/api/metodos/${metodo.categoria}`, {
+            method: "POST",
+            body: { modulo, escenario, metodo: idMetodo }
+        });
+        state.ultimoResultado = resultado;
+        state.ultimoMetodo = { id: idMetodo, nombre: metodo.nombre, iterativo: false, tipo: "numerico" };
+        state.ultimoEscenario = obtenerEscenarioSeleccionado();
+        state.ultimaEjecucion = new Date().toISOString();
+        renderizarResultadoNumerico(resultado, metodo);
+        actualizarAcciones();
+        $("numerical-hint").textContent = `Análisis ${metodo.nombre} completado para ${escenario}.`;
+        mostrarToast(`${metodo.nombre} ejecutado correctamente.`, "success");
+    } catch (error) {
+        $("numerical-results").hidden = true;
+        state.ultimoResultado = null;
+        state.ultimoMetodo = null;
+        actualizarAcciones();
+        $("numerical-hint").textContent = "No se pudo completar el análisis.";
+        mostrarToast(error.message, "error");
+    } finally {
+        boton.disabled = false;
+    }
+}
+
 function seleccionarMetodo(id, opciones = {}) {
     const { limpiar = true } = opciones;
     const metodo = METODOS[id];
@@ -428,6 +806,7 @@ function limpiarResultado() {
     $("iteration-count").textContent = "0 iteraciones";
     $("lu-factors").hidden = true;
     $("lu-grid").replaceChildren();
+    $("numerical-results").hidden = true;
 
     actualizarAcciones();
 }
@@ -436,9 +815,19 @@ function actualizarAcciones() {
     const sinEscenario = !state.escenarioSeleccionado;
     const botonEjecutar = $("run-method");
     const botonGuardar = $("save-simulation");
+    const botonGuardarNumerico = $("save-numerical-simulation");
 
     botonEjecutar.disabled = sinEscenario || state.ejecutando;
     botonGuardar.disabled = sinEscenario || !state.ultimoResultado || state.guardando;
+
+    if (botonGuardarNumerico) {
+        const hayResultadoNumerico = Boolean(
+            state.ultimoResultado
+            && state.ultimoMetodo
+            && state.ultimoMetodo.tipo === "numerico"
+        );
+        botonGuardarNumerico.disabled = !hayResultadoNumerico || state.guardando;
+    }
 
     if (!state.ejecutando && !state.ultimoResultado) {
         $("run-hint").textContent = sinEscenario
@@ -518,6 +907,7 @@ async function ejecutarMetodo() {
         state.ultimoEscenario = escenario;
         state.ultimaEjecucion = new Date().toISOString();
 
+        $("numerical-results").hidden = true;
         renderizarResultado(resultado, metodo);
         mostrarToast(
             `${metodo.nombre}: ${resultado.convergio ? "convergió" : "no convergió"} en ${resultado.iteraciones_totales} iteraciones.`,
@@ -669,15 +1059,20 @@ function renderizarFactoresLu(resultado) {
 async function guardarSimulacion() {
     const resultado = state.ultimoResultado;
     const metodo = state.ultimoMetodo;
-    const escenario = obtenerEscenarioSeleccionado();
+    const escenario = state.ultimoEscenario || obtenerEscenarioSeleccionado();
 
     if (!resultado || !metodo || !escenario) {
         mostrarToast("Ejecuta un método antes de guardar la simulación.", "error");
         return;
     }
 
+    const esNumerico = metodo.tipo === "numerico";
+    const botonGuardarActivo = esNumerico && $("save-numerical-simulation")
+        ? $("save-numerical-simulation")
+        : $("save-simulation");
+
     state.guardando = true;
-    alternarCarga($("save-simulation"), true, "Guardando");
+    alternarCarga(botonGuardarActivo, true, "Guardando");
     actualizarAcciones();
 
     const ahora = new Date().toISOString();
@@ -690,9 +1085,11 @@ async function guardarSimulacion() {
         escenario_id: escenario.id,
         codigo,
         nombre: `${metodo.nombre} · ${escenario.nombre}`,
-        descripcion: `Ejecución de ${metodo.nombre} sobre el sistema de referencia (${escenario.caso_codigo || "caso"}).`,
+        descripcion: esNumerico
+            ? `Ejecución de ${metodo.nombre} para ${escenario.caso_nombre || "módulo"} (${escenario.codigo}).`
+            : `Ejecución de ${metodo.nombre} sobre el sistema de referencia (${escenario.caso_codigo || "caso"}).`,
         metodo: metodo.nombre,
-        version_modelo: "lineal-v1",
+        version_modelo: esNumerico ? "metodos-semana-2" : "lineal-v1",
         numero_iteraciones: Math.max(1, Number(resultado.iteraciones_totales) || 1),
         nivel_confianza: 0.95,
         parametros: {
@@ -705,14 +1102,17 @@ async function guardarSimulacion() {
                 caso_codigo: escenario.caso_codigo,
                 caso_nombre: escenario.caso_nombre
             },
-            sistema: state.referencia,
+            sistema: esNumerico ? null : state.referencia,
             tolerancia,
             max_iteraciones: maxIteraciones,
             solucion: resultado.solucion,
             iteraciones_totales: resultado.iteraciones_totales,
             residual_final: resultado.residual_final,
             error_relativo_final: resultado.error_relativo_final,
-            convergio: resultado.convergio
+            convergio: resultado.convergio,
+            modulo: esNumerico ? Number($("numerical-module").value) : null,
+            escenario_numerico: esNumerico ? $("numerical-scenario").value : null,
+            resultado_numerico: esNumerico ? resultado : null
         },
         estado: resultado.convergio ? "completada" : "fallida",
         fecha_inicio: state.ultimaEjecucion || ahora,
@@ -730,11 +1130,12 @@ async function guardarSimulacion() {
         renderizarEstadisticas();
         mostrarToast(`Simulación ${guardada.codigo} guardada correctamente.`, "success");
         $("run-hint").textContent = `Simulación ${guardada.codigo} persistida en SQLite.`;
+        $("numerical-hint").textContent = `Simulación ${guardada.codigo} persistida en SQLite.`;
     } catch (error) {
         mostrarToast(error.message, "error");
     } finally {
         state.guardando = false;
-        alternarCarga($("save-simulation"), false);
+        alternarCarga(botonGuardarActivo, false);
         actualizarAcciones();
     }
 }
@@ -906,11 +1307,12 @@ async function cargarTodo(opciones = {}) {
     actualizarEstadoApi("waiting");
 
     try {
-        const [salud, casos, escenarios, simulaciones] = await Promise.all([
+        const [salud, casos, escenarios, simulaciones, escenariosModulo] = await Promise.all([
             apiRequest("/api/salud"),
             apiRequest("/api/casos-estudio"),
             apiRequest("/api/escenarios"),
-            apiRequest("/api/simulaciones")
+            apiRequest("/api/simulaciones"),
+            apiRequest("/api/escenarios-modulo")
         ]);
 
         if (sistemaValido(salud && salud.sistema_referencia)) {
@@ -920,11 +1322,13 @@ async function cargarTodo(opciones = {}) {
         state.casos = Array.isArray(casos) ? casos : [];
         state.escenarios = Array.isArray(escenarios) ? escenarios : [];
         state.simulaciones = Array.isArray(simulaciones) ? simulaciones : [];
+        state.escenariosModulo = escenariosModulo;
         state.datosCargados = true;
 
         actualizarEstadoApi("online");
         renderizarEstadisticas();
         renderizarEscenarios();
+        actualizarPresetNumerico();
         renderizarMatrizReferencia();
         renderizarSimulaciones();
         actualizarAcciones();
@@ -934,9 +1338,11 @@ async function cargarTodo(opciones = {}) {
         }
     } catch (error) {
         state.datosCargados = false;
+        state.escenariosModulo = null;
         actualizarEstadoApi("offline");
         renderizarEstadisticas();
         renderizarEscenarios();
+        actualizarPresetNumerico();
         renderizarMatrizReferencia();
         renderizarSimulaciones();
         actualizarAcciones();
@@ -967,20 +1373,6 @@ function actualizarInterfazModulo(numero) {
         heading.textContent = modulo ? modulo.nombre : "Sistemas lineales";
     }
 
-    document.querySelectorAll(".nav-sublink").forEach((enlace) => {
-        const activo = Boolean(modulo) && Number(enlace.dataset.module) === Number(numero);
-        enlace.classList.toggle("nav-sublink-active", activo);
-        if (activo) {
-            enlace.setAttribute("aria-current", "page");
-        } else {
-            enlace.removeAttribute("aria-current");
-        }
-    });
-
-    const toggle = $("modules-toggle");
-    if (toggle) {
-        toggle.classList.toggle("nav-link-active", Boolean(modulo));
-    }
 }
 
 function seleccionarModulo(numero, opciones = {}) {
@@ -991,8 +1383,9 @@ function seleccionarModulo(numero, opciones = {}) {
     }
 
     state.moduloSeleccionado = Number(numero);
+    $("numerical-module").value = String(numero);
+    actualizarPresetNumerico();
     actualizarInterfazModulo(numero);
-    actualizarNavegacionActiva("#modulo-2");
 
     const codigoCaso = caso || modulo.caso;
     if (codigoCaso && codigoCaso !== state.casoFiltro) {
@@ -1002,12 +1395,12 @@ function seleccionarModulo(numero, opciones = {}) {
         }
         renderizarEscenarios();
     }
+    seleccionarEscenarioPersistente($("numerical-scenario").value);
 
     if (desplazar) {
-        const seccion = $("modulo-2");
-        if (seccion) {
-            seccion.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
+        desplazarseASeccion("modulo-2");
+    } else {
+        actualizarNavegacionActiva();
     }
 
     if (enfocar) {
@@ -1030,33 +1423,37 @@ function abrirSolucionadorSistemas(tarjeta) {
     });
 }
 
-function actualizarNavegacionActiva(hash = window.location.hash) {
+function seccionActivaPorScroll() {
+    const secciones = ["dashboard", "modulos", "modulo-2", "numerical-workspace", "simulaciones"];
+    const lineaActiva = Math.min(180, Math.max(100, window.innerHeight * 0.22));
+    let activa = "dashboard";
+
+    for (const id of secciones) {
+        const seccion = $(id);
+        if (seccion && seccion.getBoundingClientRect().top <= lineaActiva) {
+            activa = id;
+        }
+    }
+    return activa;
+}
+
+function actualizarNavegacionActiva(seccionForzada = null) {
+    const seccionActiva = seccionForzada || navScrollTarget || seccionActivaPorScroll();
     const enlaces = Array.from(document.querySelectorAll(".nav-link"));
     const subenlaces = Array.from(document.querySelectorAll(".nav-sublink"));
-    if (!enlaces.length) {
-        return;
-    }
-
-    const destino = hash && hash.startsWith("#") ? hash : "#dashboard";
-    let activo = null;
-
-    if (state.moduloSeleccionado && (destino === "#modulo-2" || destino === "#modulos")) {
-        activo = subenlaces.find(
+    const grupoActivo = seccionActiva === "modulos" || seccionActiva === "modulo-2";
+    const subenlaceActivo = seccionActiva === "modulo-2" && state.moduloSeleccionado
+        ? subenlaces.find(
             (enlace) => Number(enlace.dataset.module) === Number(state.moduloSeleccionado)
-        ) || null;
-    }
-
-    const esSubenlace = Boolean(activo);
-    if (!activo) {
-        activo = enlaces.find((enlace) => enlace.getAttribute("href") === destino)
-            || enlaces.find((enlace) => enlace.getAttribute("href") === "#dashboard")
-            || enlaces[0];
-    }
+        ) || null
+        : null;
 
     enlaces.forEach((enlace) => {
-        const esActivo = enlace === activo || (esSubenlace && enlace.id === "modules-toggle");
-        enlace.classList.toggle("nav-link-active", esActivo);
-        if (esActivo) {
+        const activa = enlace.id === "modules-toggle"
+            ? grupoActivo
+            : enlace.dataset.navSection === seccionActiva;
+        enlace.classList.toggle("nav-link-active", activa);
+        if (activa) {
             enlace.setAttribute("aria-current", "page");
         } else {
             enlace.removeAttribute("aria-current");
@@ -1064,13 +1461,53 @@ function actualizarNavegacionActiva(hash = window.location.hash) {
     });
 
     subenlaces.forEach((enlace) => {
-        const esActivo = enlace === activo;
-        enlace.classList.toggle("nav-sublink-active", esActivo);
-        if (esActivo) {
+        const activa = enlace === subenlaceActivo;
+        enlace.classList.toggle("nav-sublink-active", activa);
+        if (activa) {
             enlace.setAttribute("aria-current", "page");
         } else {
             enlace.removeAttribute("aria-current");
         }
+    });
+}
+
+function desplazarseASeccion(id) {
+    const seccion = $(id);
+    if (!seccion) {
+        return;
+    }
+    navScrollTarget = id;
+    actualizarNavegacionActiva(id);
+    seccion.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "start"
+    });
+    if (window.location.hash !== `#${id}`) {
+        history.replaceState(null, "", `#${id}`);
+    }
+    window.clearTimeout(navScrollTimer);
+    navScrollTimer = window.setTimeout(() => {
+        navScrollTarget = null;
+        actualizarNavegacionActiva();
+    }, 1800);
+}
+
+function cancelarDesplazamientoProgramado() {
+    if (!navScrollTarget) {
+        return;
+    }
+    navScrollTarget = null;
+    window.clearTimeout(navScrollTimer);
+    actualizarNavegacionActiva();
+}
+
+function actualizarNavegacionAlDesplazarse() {
+    if (navScrollFrame !== null) {
+        return;
+    }
+    navScrollFrame = window.requestAnimationFrame(() => {
+        navScrollFrame = null;
+        actualizarNavegacionActiva();
     });
 }
 
@@ -1081,13 +1518,15 @@ function enlazarEventos() {
         });
     });
 
-    document.querySelectorAll(".nav-link[href]").forEach((enlace) => {
-        enlace.addEventListener("click", () => {
-            if (enlace.getAttribute("href") !== "#modulo-2") {
+    document.querySelectorAll(".nav-link[data-nav-section]").forEach((enlace) => {
+        enlace.addEventListener("click", (evento) => {
+            evento.preventDefault();
+            const destino = enlace.dataset.navSection;
+            if (destino !== "numerical-workspace") {
                 state.moduloSeleccionado = null;
                 actualizarInterfazModulo(null);
             }
-            actualizarNavegacionActiva(enlace.getAttribute("href"));
+            desplazarseASeccion(destino);
         });
     });
 
@@ -1118,12 +1557,38 @@ function enlazarEventos() {
     window.addEventListener("hashchange", () => {
         actualizarNavegacionActiva();
     });
+    window.addEventListener("scroll", actualizarNavegacionAlDesplazarse, { passive: true });
+    window.addEventListener("resize", actualizarNavegacionAlDesplazarse);
+    window.addEventListener("wheel", cancelarDesplazamientoProgramado, { passive: true });
+    window.addEventListener("touchstart", cancelarDesplazamientoProgramado, { passive: true });
+    window.addEventListener("pointerdown", cancelarDesplazamientoProgramado, { passive: true });
+    window.addEventListener("scrollend", () => {
+        if (navScrollTarget) {
+            navScrollTarget = null;
+            window.clearTimeout(navScrollTimer);
+            actualizarNavegacionActiva();
+        }
+    });
 
     $("scenario-select").addEventListener("change", (evento) => {
         state.escenarioSeleccionado = Number(evento.target.value) || null;
         actualizarDetalleEscenario();
         actualizarAcciones();
     });
+
+    $("numerical-module").addEventListener("change", (evento) => {
+        seleccionarModulo(evento.target.value);
+        limpiarResultado();
+    });
+    $("numerical-scenario").addEventListener("change", () => {
+        seleccionarEscenarioPersistente($("numerical-scenario").value);
+        actualizarPresetNumerico();
+        limpiarResultado();
+    });
+    $("numerical-method").addEventListener("change", () => {
+        limpiarResultado();
+    });
+    $("run-numerical").addEventListener("click", ejecutarMetodoNumerico);
 
     ["tolerance", "max-iterations"].forEach((id) => {
         $(id).addEventListener("change", () => {
@@ -1136,6 +1601,10 @@ function enlazarEventos() {
 
     $("run-method").addEventListener("click", ejecutarMetodo);
     $("save-simulation").addEventListener("click", guardarSimulacion);
+    const botonGuardarNumerico = $("save-numerical-simulation");
+    if (botonGuardarNumerico) {
+        botonGuardarNumerico.addEventListener("click", guardarSimulacion);
+    }
     $("refresh-all").addEventListener("click", () => cargarTodo());
     $("refresh-simulations").addEventListener("click", recargarSimulaciones);
 
@@ -1180,7 +1649,11 @@ function iniciar() {
     renderizarSimulaciones();
     actualizarEstadoApi("waiting");
     actualizarAcciones();
-    cargarTodo({ silencioso: true });
+    void cargarTodo({ silencioso: true });
 }
 
-document.addEventListener("DOMContentLoaded", iniciar);
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", iniciar, { once: true });
+} else {
+    iniciar();
+}

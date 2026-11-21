@@ -29,6 +29,7 @@ if __package__:
         jacobi,
         solucion_exacta,
     )
+    from .escenarios_modulo import ejecutar_metodo_modulo, obtener_escenarios_modulo
 else:
     from database import (
         DB_PATH,
@@ -49,6 +50,7 @@ else:
         jacobi,
         solucion_exacta,
     )
+    from escenarios_modulo import ejecutar_metodo_modulo, obtener_escenarios_modulo
 
 app = Flask(__name__, static_folder="../frontend", static_url_path="")
 app.config["JSON_SORT_KEYS"] = False
@@ -158,10 +160,77 @@ def listar_metodos() -> tuple[Response, int]:
                 {"nombre": "Jacobi", "ruta": "/api/metodos/jacobi", "tipo": "iterativo"},
                 {"nombre": "Gauss-Seidel", "ruta": "/api/metodos/gauss-seidel", "tipo": "iterativo"},
                 {"nombre": "Gradiente conjugado", "ruta": "/api/metodos/gradiente-conjugado", "tipo": "iterativo"},
+                {"nombre": "Raíces", "ruta": "/api/metodos/raices", "tipo": "no lineal"},
+                {"nombre": "Integración", "ruta": "/api/metodos/integracion", "tipo": "cuadratura"},
+                {"nombre": "EDO", "ruta": "/api/metodos/edo", "tipo": "integrador"},
+                {"nombre": "Interpolación", "ruta": "/api/metodos/interpolacion", "tipo": "interpolación"},
             ],
             "sistema_referencia": {"A": A_REFERENCIA, "b": B_REFERENCIA},
         }
     )
+
+
+def _ejecutar_metodo_nuevo(categoria: str) -> tuple[Response, int]:
+    try:
+        datos = _obtener_payload()
+        _requerir_campos(datos, ["modulo", "escenario", "metodo"])
+        modulo = int(datos["modulo"])
+        escenario = str(datos["escenario"])
+        metodo = str(datos["metodo"])
+        categorias = {
+            "raices": {"biseccion", "newton", "secante"},
+            "integracion": {"trapecio", "simpson", "romberg"},
+            "edo": {"rk2", "rk4"},
+            "interpolacion": {"lagrange", "newton_interpolacion", "spline"},
+        }
+        if metodo not in categorias[categoria]:
+            raise ValueError(f"El método no pertenece a la categoría {categoria}")
+        return _responder(ejecutar_metodo_modulo(modulo, escenario, metodo))
+    except (ValueError, TypeError) as exc:
+        return _responder({"error": str(exc)}, 400)
+    except Exception:
+        app.logger.exception("Error al ejecutar un método del módulo")
+        return _responder({"error": "Error interno al ejecutar el método numérico"}, 500)
+
+
+@app.get("/api/escenarios-modulo")
+def api_escenarios_modulo() -> tuple[Response, int]:
+    return _responder(obtener_escenarios_modulo())
+
+
+@app.post("/api/metodos/raices")
+def api_raices() -> tuple[Response, int]:
+    return _ejecutar_metodo_nuevo("raices")
+
+
+@app.post("/api/metodos/integracion")
+def api_integracion() -> tuple[Response, int]:
+    return _ejecutar_metodo_nuevo("integracion")
+
+
+@app.post("/api/metodos/edo")
+def api_edo() -> tuple[Response, int]:
+    return _ejecutar_metodo_nuevo("edo")
+
+
+@app.post("/api/metodos/interpolacion")
+def api_interpolacion() -> tuple[Response, int]:
+    return _ejecutar_metodo_nuevo("interpolacion")
+
+
+@app.post("/api/modulos/<int:modulo>/ejecutar")
+def api_ejecutar_modulo(modulo: int) -> tuple[Response, int]:
+    try:
+        datos = _obtener_payload()
+        _requerir_campos(datos, ["escenario", "metodo"])
+        return _responder(
+            ejecutar_metodo_modulo(modulo, str(datos["escenario"]), str(datos["metodo"]))
+        )
+    except (ValueError, TypeError) as exc:
+        return _responder({"error": str(exc)}, 400)
+    except Exception:
+        app.logger.exception("Error al ejecutar un método del módulo")
+        return _responder({"error": "Error interno al ejecutar el método numérico"}, 500)
 
 
 @app.post("/api/metodos/exacta")
@@ -302,6 +371,16 @@ def recurso_no_encontrado(_: Any) -> tuple[Response, int]:
 @app.errorhandler(405)
 def metodo_no_permitido(_: Any) -> tuple[Response, int]:
     return _responder({"error": "Método HTTP no permitido"}, 405)
+
+
+@app.errorhandler(sqlite3.Error)
+def error_base_datos(error: sqlite3.Error) -> tuple[Response, int]:
+    app.logger.error(
+        "Error SQLite al atender la solicitud: %s",
+        error,
+        exc_info=(type(error), error, error.__traceback__),
+    )
+    return _responder({"error": "La base de datos no está disponible"}, 503)
 
 
 if __name__ == "__main__":
