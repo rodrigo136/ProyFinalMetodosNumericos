@@ -101,9 +101,19 @@ def resolver_edo(
             y = _combinar(y, h, [(1.0 / 6.0, k1), (1.0 / 3.0, k2), (1.0 / 3.0, k3), (1.0 / 6.0, k4)])
         agregar(t0 + (i + 1) * h, y)
 
-    valores = [abs(float(f)) for f in filas[-1]["aproximacion"]] if isinstance(filas[-1]["aproximacion"], list) else [abs(float(filas[-1]["aproximacion"]))]
-    escala = max((abs(float(v)) for fila in filas for v in (fila["aproximacion"] if isinstance(fila["aproximacion"], list) else [fila["aproximacion"]])), default=1.0)
-    estable = all(math.isfinite(v) for v in valores) and max(valores, default=0.0) <= max(1.0, escala) * 1e6
+    estados = [
+        valor
+        for fila in filas
+        for valor in (
+            fila["aproximacion"]
+            if isinstance(fila["aproximacion"], list)
+            else [fila["aproximacion"]]
+        )
+    ]
+    escala_inicial = max((abs(valor) for valor in _vector(inicial)), default=1.0)
+    estable = all(math.isfinite(valor) for valor in estados) and max(
+        (abs(valor) for valor in estados), default=0.0
+    ) <= max(1.0, escala_inicial) * 1e6
     fila_final = filas[-1]
     return {
         "metodo": "Heun (Runge-Kutta de 2.º orden)" if clave in {"rk2", "heun"} else "Runge-Kutta clásico de 4.º orden",
@@ -114,7 +124,7 @@ def resolver_edo(
         "error_relativo_final": fila_final["error_relativo"],
         "error_porcentual_final": fila_final["error_porcentual"],
         "iteraciones_totales": pasos,
-        "convergio": estable,
+        "convergio": True,
         "estable": estable,
-        "mensaje": "Integración completada; estabilidad estimada por finitud y crecimiento acotado." if estable else "La integración presenta crecimiento excesivo o valores no finitos.",
+        "mensaje": "Integración completada; la trayectoria permanece acotada en la escala inicial." if estable else "La integración completó los pasos, pero presenta crecimiento excesivo; esto se informa como inestabilidad numérica, no como falta de convergencia iterativa.",
     }

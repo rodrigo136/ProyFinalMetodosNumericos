@@ -86,34 +86,51 @@ Se implementan cinco métodos:
 
 Los métodos iterativos reportan convergencia, número de iteraciones, errores y residual. La convergencia depende de las propiedades del sistema y de los parámetros elegidos; no está garantizada para cualquier matriz.
 
-### Métodos numéricos de la Semana 2
+### Métodos numéricos de las Semanas 2 y 3
 
 Se agregan los módulos `backend/raices.py`, `backend/integracion.py`,
 `backend/edo.py` y `backend/interpolacion.py`. Los métodos reportan sus
 iteraciones o tablas, errores disponibles, referencias analíticas cuando
-corresponden y estados de convergencia/estabilidad. Las referencias iguales a
+corresponden y estados de convergencia, estabilidad y condicionamiento como
+propiedades diferenciadas. Las referencias iguales a
 cero dejan el error relativo como no disponible, y se rechazan entradas o
 resultados no finitos.
 
-Los cuatro módulos incluyen escenarios reproducibles `NORMAL`, `ESTRES` y
-`MAL_CONDICIONADO`. El escenario de estrés representa exigencia física u
-operativa; el mal condicionado representa sensibilidad matemática. La
-configuración de oscilaciones incluye además una excitación próxima a la
-frecuencia natural. Son modelos académicos, no ajustes ni recomendaciones para
-la operación real de Mi Teleférico.
+Los cuatro módulos incluyen los escenarios reproducibles `NORMAL`, `ESTRES` y
+`MAL_CONDICIONADO`, con presets editables y comparación de métodos:
 
-- **Módulo 1:** frenado con Heun/RK4, cuadraturas de la velocidad y raíces del
-  instante de parada.
-- **Módulo 2:** raíces del deterioro respecto al umbral. El calibrador de
-  sistemas lineales ya existente permanece disponible.
-- **Módulo 3:** sistema masa-resorte-amortiguador forzado, y cuadraturas de
-  \(x(t)^2\).
+- **Módulo 1:** detención con RK2/Heun y RK4 para \(x'=v,\;v'=-a(v,t)\);
+  trapecio compuesto, Simpson 1/3 y Romberg para la distancia; bisección,
+  Newton-Raphson y secante para \(v(t)=0\). El caso normal usa la referencia
+  constante \(v_0=6\ \mathrm{m/s}\), \(a=1.5\ \mathrm{m/s^2}\); el caso de
+  estrés incluye desaceleración variable. Se comparan reacción, distancia
+  disponible y detención.
+- **Módulo 2:** raíces de \(D(t)-D_{\mathrm{umbral}}\), con
+  \(D(t)=D_0+\alpha t+\beta t^2\), más Jacobi, Gauss-Seidel, LU y gradiente
+  conjugado sobre un sistema SPD de orden \(4\times4\), con \(\kappa_2(A)\).
+  Un calendario ilustrativo contrasta mantenimiento hipotético, disponibilidad
+  y cruce de umbral.
+- **Módulo 3:** masa-resorte-amortiguador forzado con
+  \(m=500\ \mathrm{kg}\), \(k=1200\ \mathrm{N/m}\), \(c=40\ \mathrm{Ns/m}\)
+  en los presets normal y estrés; integra \(x(t)^2\) con trapecio, Simpson 1/3
+  y Romberg. Se incluye referencia analítica de vibración libre subamortiguada
+  y un caso de malla crítica para observar estabilidad.
 - **Módulo 4:** Lagrange, Newton por diferencias divididas y splines cúbicos
-  naturales evaluados en lecturas ocultas.
+  naturales sobre señales \(sin(t)\), \(exp(-t)\) y Runge; se ocultan muestras
+  antes de interpolar para medir el error y se modela ruido determinista.
 
-El panel nuevo ofrece dos gráficos Canvas sin dependencias externas, tablas
-detalladas y parámetros del escenario. Las ejecuciones numéricas se guardan en
-la misma tabla SQLite de simulaciones y aparecen en el historial existente.
+Cada módulo incluye dos gráficos Canvas, una animación con controles de
+reproducción/pausa/reinicio/velocidad, tablas y conclusiones separadas
+numérica y del problema. El historial SQLite ofrece búsqueda y filtros, detalle
+completo y relanzamiento, comparando el nuevo cálculo con el resultado guardado
+dentro de una tolerancia explícita. Los presets modificados también se
+persisten para reproducir una ejecución después de recargar la página.
+
+> **Alcance de los datos:** todos los datos, señales, ráfagas, líneas, fallas,
+> umbrales y calendarios presentados son sintéticos o hipotéticos y tienen
+> finalidad académica. No son fallas reales, mediciones, límites de seguridad,
+> telemetría ni datos oficiales de Mi Teleférico; no deben usarse para tomar
+> decisiones operativas.
 
 ## Instalación y ejecución
 
@@ -220,6 +237,7 @@ Para detener cada servidor, pulsa `Ctrl+C` en su terminal.
 | `GET` | `/api/casos-estudio` | Consultar los casos de estudio. |
 | `GET` | `/api/escenarios` | Consultar escenarios. |
 | `GET` | `/api/simulaciones` | Consultar simulaciones guardadas. |
+| `POST` | `/api/simulaciones/<id>/relanzar` | Recalcular desde SQLite y verificar coincidencia numérica dentro de una tolerancia. |
 
 Las solicitudes `POST` de métodos aceptan un objeto JSON. Se puede omitir `A` y `b` para usar el sistema de referencia. Los métodos iterativos aceptan además `x0`, `tolerancia` y `max_iteraciones`.
 

@@ -185,7 +185,10 @@ def _ejecutar_metodo_nuevo(categoria: str) -> tuple[Response, int]:
         }
         if metodo not in categorias[categoria]:
             raise ValueError(f"El método no pertenece a la categoría {categoria}")
-        return _responder(ejecutar_metodo_modulo(modulo, escenario, metodo))
+        parametros = datos.get("parametros", {})
+        if not isinstance(parametros, dict):
+            raise ValueError("El campo parametros debe ser un objeto JSON")
+        return _responder(ejecutar_metodo_modulo(modulo, escenario, metodo, parametros))
     except (ValueError, TypeError) as exc:
         return _responder({"error": str(exc)}, 400)
     except Exception:
@@ -223,8 +226,13 @@ def api_ejecutar_modulo(modulo: int) -> tuple[Response, int]:
     try:
         datos = _obtener_payload()
         _requerir_campos(datos, ["escenario", "metodo"])
+        parametros = datos.get("parametros", {})
+        if not isinstance(parametros, dict):
+            raise ValueError("El campo parametros debe ser un objeto JSON")
         return _responder(
-            ejecutar_metodo_modulo(modulo, str(datos["escenario"]), str(datos["metodo"]))
+            ejecutar_metodo_modulo(
+                modulo, str(datos["escenario"]), str(datos["metodo"]), parametros
+            )
         )
     except (ValueError, TypeError) as exc:
         return _responder({"error": str(exc)}, 400)
@@ -330,6 +338,67 @@ def api_recuperar_simulacion(simulacion_id: int) -> tuple[Response, int]:
     if simulacion is None:
         return _responder({"error": "Simulación no encontrada"}, 404)
     return _responder(simulacion)
+
+
+def _diferencia_maxima(esperado: Any, actual: Any) -> float:
+    if isinstance(esperado, bool) or isinstance(actual, bool):
+        return 0.0 if esperado == actual else math.inf
+    if isinstance(esperado, (int, float)) and isinstance(actual, (int, float)):
+        return abs(float(esperado) - float(actual))
+    if isinstance(esperado, dict) and isinstance(actual, dict):
+        if esperado.keys() != actual.keys():
+            return math.inf
+        return max(
+            (_diferencia_maxima(esperado[clave], actual[clave]) for clave in esperado),
+            default=0.0,
+        )
+    if isinstance(esperado, list) and isinstance(actual, list):
+        if len(esperado) != len(actual):
+            return math.inf
+        return max(
+            (_diferencia_maxima(a, b) for a, b in zip(esperado, actual)),
+            default=0.0,
+        )
+    return 0.0 if esperado == actual else math.inf
+
+
+@app.post("/api/simulaciones/<int:simulacion_id>/relanzar")
+def api_relanzar_simulacion(simulacion_id: int) -> tuple[Response, int]:
+    try:
+        simulacion = recuperar_simulacion(simulacion_id)
+        if simulacion is None:
+            return _responder({"error": "Simulación no encontrada"}, 404)
+        parametros_guardados = simulacion["parametros"]
+        modulo = parametros_guardados.get("modulo")
+        escenario = parametros_guardados.get("escenario_numerico")
+        metodo = parametros_guardados.get("metodo")
+        configuracion = parametros_guardados.get("parametros_modelo")
+        esperado = parametros_guardados.get("resultado_numerico")
+        if not isinstance(modulo, int) or not escenario or not metodo:
+            raise ValueError("La simulación guardada no contiene configuración reproducible")
+        if not isinstance(configuracion, dict) or not isinstance(esperado, dict):
+            raise ValueError("La simulación guardada no incluye parámetros y resultados completos")
+        datos = _obtener_payload()
+        tolerancia = float(datos.get("tolerancia", 1e-10))
+        if not math.isfinite(tolerancia) or tolerancia < 0:
+            raise ValueError("La tolerancia debe ser finita y no negativa")
+        resultado = ejecutar_metodo_modulo(modulo, escenario, metodo, configuracion)
+        diferencia = _diferencia_maxima(esperado, resultado)
+        return _responder({
+            "simulacion_id": simulacion_id,
+            "metodo": metodo,
+            "modulo": modulo,
+            "escenario": escenario,
+            "tolerancia": tolerancia,
+            "diferencia_maxima": diferencia if math.isfinite(diferencia) else None,
+            "coincide": diferencia <= tolerancia,
+            "resultado_recalculado": resultado,
+        })
+    except (ValueError, TypeError) as exc:
+        return _responder({"error": str(exc)}, 400)
+    except Exception:
+        app.logger.exception("Error al relanzar una simulación")
+        return _responder({"error": "Error interno al relanzar la simulación"}, 500)
 
 
 @app.post("/api/simulaciones")
